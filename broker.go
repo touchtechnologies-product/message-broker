@@ -9,8 +9,7 @@ import (
 type Broker interface {
 	RegisterHandler(topic string, handler common.Handler)
 	Start()
-	Stop()
-	SendMessage(topic string, msg []byte) (err error)
+	SendTopicMessage(topic string, msg []byte) (err error)
 }
 
 func NewBroker(brokerType string, config *common.Config) (broker Broker, err error) {

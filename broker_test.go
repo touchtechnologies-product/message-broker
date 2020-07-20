@@ -6,6 +6,7 @@ import (
 	"github.com/stretchr/testify/suite"
 	"github.com/touchtechnologies-product/message-broker/common"
 	"testing"
+	"time"
 )
 
 type TestSuite struct {
@@ -46,16 +47,16 @@ func (suite *TestSuite) TestConsumeKafkaMessage() {
 
 	go broker.Start()
 
+	time.Sleep(10*time.Second)
+
 	msg := []byte("test message")
-	err = broker.SendMessage(topic, msg)
+	err = broker.SendTopicMessage(topic, msg)
 	suite.NoError(err)
-	err = broker.SendMessage(errTopic, msg)
+	err = broker.SendTopicMessage(errTopic, msg)
 	suite.NoError(err)
 
 	suite.Equal(msg, <-suite.msgCh)
 	suite.Equal(msg, <-suite.errMsgCh)
-
-	broker.Stop()
 }
 
 func (suite *TestSuite) newSuccessHandler() (handler common.Handler) {
@@ -72,14 +73,66 @@ func (suite *TestSuite) newHandlerWithErrorMsg(errMsg string) (handler common.Ha
 	}
 }
 
+func (suite *TestSuite) TestNewBrokerWithInvalidBroker() {
+	_, err := NewBroker("invalid-type", suite.conf)
+	suite.Error(err)
+}
+
 func (suite *TestSuite) TestNewBrokerWithInvalidVersion() {
 	suite.SetupWrongVersionTest()
 	_, err := NewBroker(common.KafkaBrokerType, suite.conf)
 	suite.Error(err)
 }
-func (suite *TestSuite) TestNewBrokerWithInvalidBroker() {
-	_, err := NewBroker("invalid-type", suite.conf)
+
+func (suite *TestSuite) TestStartKafkaBrokerWithoutHandler() {
+	broker, err := NewBroker(common.KafkaBrokerType, suite.conf)
+	suite.NoError(err)
+	broker.Start()
+}
+
+func (suite *TestSuite) TestNewKafkaBrokerWithNilConfig() {
+	_, err := NewBroker(common.KafkaBrokerType, nil)
 	suite.Error(err)
+}
+
+func (suite *TestSuite) TestNewKafkaBrokerWithNilHost() {
+	suite.conf.Host = []string{}
+	_, err := NewBroker(common.KafkaBrokerType, suite.conf)
+	suite.Error(err)
+}
+
+func (suite *TestSuite) TestConsumeNoHandlerKafkaMessage() {
+	broker, err := NewBroker(common.KafkaBrokerType, suite.conf)
+	suite.NoError(err)
+
+	go broker.Start()
+
+	time.Sleep(10*time.Second)
+
+	msg := []byte("test message")
+	err = broker.SendTopicMessage("test-unregistered-topic", msg)
+	suite.NoError(err)
+
+	time.Sleep(1*time.Second)
+}
+
+func (suite *TestSuite) TestCleanupKafkaBroker() {
+	broker, err := NewBroker(common.KafkaBrokerType, suite.conf)
+	suite.NoError(err)
+
+	errTopic := "test-topic-err"
+	errHandler := suite.newHandlerWithErrorMsg("error message")
+	broker.RegisterHandler(errTopic, errHandler)
+
+	go broker.Start()
+
+	time.Sleep(10*time.Second)
+
+	msg := []byte("test message")
+	err = broker.SendTopicMessage(errTopic, msg)
+	suite.NoError(err)
+
+	suite.Equal(msg, <-suite.errMsgCh)
 }
 
 func TestTestSuite(t *testing.T) {
