@@ -1,6 +1,7 @@
 package kafka
 
 import (
+	"context"
 	"errors"
 	"github.com/Shopify/sarama"
 	"github.com/bwmarrin/snowflake"
@@ -11,6 +12,10 @@ import (
 )
 
 const MaxSnowFlakeNodeNum = 1024
+
+func (kafka *broker) initContext() {
+	kafka.ctx, kafka.cancel = context.WithCancel(context.Background())
+}
 
 func (kafka *broker) newSaramaConfig() (conf *sarama.Config, err error) {
 	if kafka.conf == nil {

@@ -2,23 +2,23 @@ package message
 
 import (
 	"context"
-	"errors"
 	"github.com/stretchr/testify/suite"
 	"github.com/touchtechnologies-product/message-broker/common"
+	"syscall"
 	"testing"
 	"time"
 )
 
 type TestSuite struct {
 	suite.Suite
-	conf *common.Config
-	msgCh chan []byte
-	errMsgCh chan []byte
+	conf       *common.Config
+	msgCh      chan []byte
+	otherMsgCh chan []byte
 }
 
 func (suite *TestSuite) SetupTest() {
 	suite.msgCh = make(chan []byte)
-	suite.errMsgCh = make(chan []byte)
+	suite.otherMsgCh = make(chan []byte)
 	suite.conf = &common.Config{
 		BackOffTime:  2,
 		MaximumRetry: 3,
@@ -40,37 +40,29 @@ func (suite *TestSuite) TestConsumeKafkaMessage() {
 	topic := "test-topic"
 	handler := suite.newSuccessHandler()
 	broker.RegisterHandler(topic, handler)
+	otherTopic := "test-other-topic"
+	handler = suite.newOtherSuccessHandler()
+	broker.RegisterHandler(otherTopic, handler)
 
-	errTopic := "test-topic-err"
-	errHandler := suite.newHandlerWithErrorMsg("error message")
-	broker.RegisterHandler(errTopic, errHandler)
-
-	go broker.Start()
-
-	time.Sleep(10*time.Second)
+	go broker.Start(func(ctx context.Context, err error) {})
+	time.Sleep(10 * time.Second)
 
 	msg := []byte("test message")
 	err = broker.SendTopicMessage(topic, msg)
 	suite.NoError(err)
-	err = broker.SendTopicMessage(errTopic, msg)
+	otherMsg := []byte("test other message")
+	err = broker.SendTopicMessage(otherTopic, otherMsg)
 	suite.NoError(err)
 
 	suite.Equal(msg, <-suite.msgCh)
-	suite.Equal(msg, <-suite.errMsgCh)
+	suite.Equal(otherMsg, <-suite.otherMsgCh)
 }
 
 func (suite *TestSuite) newSuccessHandler() (handler common.Handler) {
-	return func(ctx context.Context, msg []byte) (err error) {
-		suite.msgCh <- msg
-		return nil
-	}
+	return func(ctx context.Context, msg []byte) { suite.msgCh <- msg }
 }
-
-func (suite *TestSuite) newHandlerWithErrorMsg(errMsg string) (handler common.Handler) {
-	return func(ctx context.Context, msg []byte) (err error) {
-		suite.errMsgCh <- msg
-		return errors.New(errMsg)
-	}
+func (suite *TestSuite) newOtherSuccessHandler() (handler common.Handler) {
+	return func(ctx context.Context, msg []byte) { suite.otherMsgCh <- msg }
 }
 
 func (suite *TestSuite) TestNewBrokerWithInvalidBroker() {
@@ -84,10 +76,11 @@ func (suite *TestSuite) TestNewBrokerWithInvalidVersion() {
 	suite.Error(err)
 }
 
+
 func (suite *TestSuite) TestStartKafkaBrokerWithoutHandler() {
 	broker, err := NewBroker(common.KafkaBrokerType, suite.conf)
 	suite.NoError(err)
-	broker.Start()
+	go broker.Start(func(ctx context.Context, err error) {})
 }
 
 func (suite *TestSuite) TestNewKafkaBrokerWithNilConfig() {
@@ -101,38 +94,31 @@ func (suite *TestSuite) TestNewKafkaBrokerWithNilHost() {
 	suite.Error(err)
 }
 
+
 func (suite *TestSuite) TestConsumeNoHandlerKafkaMessage() {
 	broker, err := NewBroker(common.KafkaBrokerType, suite.conf)
 	suite.NoError(err)
 
-	go broker.Start()
+	ch := make(chan error)
+	go broker.Start(func(ctx context.Context, err error) { ch <- err })
 
-	time.Sleep(10*time.Second)
-
-	msg := []byte("test message")
-	err = broker.SendTopicMessage("test-unregistered-topic", msg)
-	suite.NoError(err)
-
-	time.Sleep(1*time.Second)
+	suite.Error(<-ch)
 }
 
-func (suite *TestSuite) TestCleanupKafkaBroker() {
+func (suite *TestSuite) TestSignalInterruptKafka() {
 	broker, err := NewBroker(common.KafkaBrokerType, suite.conf)
 	suite.NoError(err)
 
-	errTopic := "test-topic-err"
-	errHandler := suite.newHandlerWithErrorMsg("error message")
-	broker.RegisterHandler(errTopic, errHandler)
+	topic := "test-topic"
+	handler := suite.newSuccessHandler()
+	broker.RegisterHandler(topic, handler)
 
-	go broker.Start()
+	ch := make(chan error)
+	go broker.Start(func(ctx context.Context, err error) { ch <- err })
+	time.Sleep(10 * time.Second)
 
-	time.Sleep(10*time.Second)
-
-	msg := []byte("test message")
-	err = broker.SendTopicMessage(errTopic, msg)
-	suite.NoError(err)
-
-	suite.Equal(msg, <-suite.errMsgCh)
+	_ = syscall.Kill(syscall.Getpid(), syscall.SIGINT)
+	suite.Error(<-ch)
 }
 
 func TestTestSuite(t *testing.T) {

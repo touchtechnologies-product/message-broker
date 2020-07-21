@@ -35,11 +35,15 @@ if err != nil {
     panic(err)
 }
 
-handler := func(ctx context.Context, msg []byte) (err error) {
+handler := func(ctx context.Context, msg []byte) {
     // Do something
-    return nil
 }
-broker.RegisterHandler(topic, handler)
+broker.RegisterHandler("my-topic", handler)
 
-go broker.Start()
+go broker.Start(func(ctx context.Context, err error) {
+    // Do something after broker is cleaned-up
+})
+
+msg := []byte("my message")
+err = broker.SendTopicMessage("my-topic", msg)
 ```

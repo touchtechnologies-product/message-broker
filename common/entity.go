@@ -11,4 +11,5 @@ type Config struct {
 	Debug        bool
 }
 
-type Handler func(ctx context.Context, msg []byte) (err error)
+type Handler func(ctx context.Context, msg []byte)
+type CloseCallback func(ctx context.Context, err error)

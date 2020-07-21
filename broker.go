@@ -8,7 +8,7 @@ import (
 
 type Broker interface {
 	RegisterHandler(topic string, handler common.Handler)
-	Start()
+	Start(errCallback common.CloseCallback)
 	SendTopicMessage(topic string, msg []byte) (err error)
 }
 
