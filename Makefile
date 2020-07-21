@@ -1,7 +1,4 @@
-.PHONY: test
-
-test:
-	go test --cover
+.PHONY: publish
 
 publish:
 	go mod tidy
@@ -9,4 +6,5 @@ publish:
 	git commit -m "Version $(v): $(msg)"
 	git tag $(v)
 	git push origin $(v)
+	git push
 	
